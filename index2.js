@@ -72,31 +72,34 @@ const pipe = new chain([
       return r;
     }, {});
   }),
-  // transformStream2,
+  transformStream2.on("finish", () => {
+    config.connection.query(
+      `select * from temporary_table;`,
+
+      function (err, results) {
+        if (err) throw err;
+        console.log(results);
+        // conn.end();
+        console.log("DONE!");
+      }
+    );
+    config.connection.query(
+      `INSERT IGNORE INTO newtable select * from temporary_table;`,
+
+      function (err) {
+        if (err) throw err;
+        // conn.end();
+        config.connection.end();
+
+        console.log("DONE!");
+        process.exit(0);
+      }
+    );
+  }),
 ]);
 
 // pipe.on("data", async (chunk) => {
 //   console.log(chunk);
 // });
 
-pipe.pipe(transformStream2).on("finish", () => {
-  config.connection.query(
-    `select * from temporary_table;`,
-
-    function (err, results) {
-      if (err) throw err;
-      console.log(results);
-      // conn.end();
-      console.log("DONE!");
-    }
-  );
-  config.connection.query(
-    `INSERT IGNORE INTO newtable select * from temporary_table;`,
-
-    function (err) {
-      if (err) throw err;
-      // conn.end();
-      console.log("DONE!");
-    }
-  );
-});
+// pipe.pipe(transformStream2);
