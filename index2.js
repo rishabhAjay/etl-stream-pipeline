@@ -4,8 +4,49 @@ const fs = require("fs");
 const { S3 } = require("@aws-sdk/client-s3");
 const s3 = new S3({ region: "ap-south-1" });
 const chain = require("stream-chain");
+
 const { randomUUID } = require("crypto");
 const config = require("./config");
+const { Transform, Writable } = require("stream");
+
+const transformStream2 = new Writable({
+  objectMode: true,
+  writev(chunk, callback) {
+    console.log(chunk);
+    config.connection.query(
+      "CREATE TEMPORARY TABLE IF NOT EXISTS temporary_table SELECT * FROM newtable LIMIT 0;",
+      function (err) {
+        if (err) throw err;
+        // conn.end();
+        var values = [
+          chunk[0].chunk.Success.map((item) => [
+            item.id,
+            item.firstName,
+            item.lastName,
+            item.emailBusiness,
+          ]),
+        ];
+        // console.log(values);
+        config.connection.query(
+          "INSERT INTO temporary_table (id, firstName, lastName, emailBusiness) VALUES ?",
+          values,
+          function (err) {
+            if (err) throw err;
+            callback();
+
+            // conn.end();
+          }
+        );
+        // config.connection.end();
+
+        // process.exit(0);
+      }
+    );
+    // console.log(chunk);
+    // return chunk;
+    // pipe.emit("finish");
+  },
+});
 
 const pipe = new chain([
   fs.createReadStream("sample-data.csv"),
@@ -31,31 +72,31 @@ const pipe = new chain([
       return r;
     }, {});
   }),
+  // transformStream2,
 ]);
 
-pipe.on("data", async (chunk) => {
-  console.log(chunk);
+// pipe.on("data", async (chunk) => {
+//   console.log(chunk);
+// });
 
-  const sql =
-    "INSERT INTO newtable (id, firstName, lastName, emailBusiness) VALUES ?";
-  var values = [
-    chunk.map((item) => [
-      item.id,
-      item.firstName,
-      item.lastName,
-      item.emailBusiness,
-    ]),
-  ];
-  config.connection.query(sql, values, function (err) {
-    if (err) throw err;
-    // conn.end();
-    console.log("DONE!");
-    process.exit(0);
-  });
-  await s3.putObject({
-    ...config.params,
-    Key: `${randomUUID()}.json`,
-    Body: JSON.stringify(chunk),
-    ContentType: "application/json",
-  });
+pipe.pipe(transformStream2).on("finish", () => {
+  config.connection.query(
+    `select * from temporary_table;`,
+
+    function (err, results) {
+      if (err) throw err;
+      console.log(results);
+      // conn.end();
+      console.log("DONE!");
+    }
+  );
+  config.connection.query(
+    `INSERT IGNORE INTO newtable select * from temporary_table;`,
+
+    function (err) {
+      if (err) throw err;
+      // conn.end();
+      console.log("DONE!");
+    }
+  );
 });
